@@ -34,7 +34,8 @@ public class Main {
 
   private static String[] parseRequest() throws IOException {
     var input = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
-    return input.readLine() == null ? new String[]{} : input.readLine().split(" ");
+    var line = input.readLine();
+    return line == null ? new String[]{} : line.split(" ");
   }
 
   private static String processRequest(String method, String url) throws IOException {
