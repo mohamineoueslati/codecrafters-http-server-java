@@ -1,4 +1,5 @@
 import java.io.BufferedReader;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
@@ -7,8 +8,11 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.file.Files;
 import java.util.HashMap;
+import java.util.Map;
 import java.util.stream.Collectors;
+import java.util.zip.GZIPOutputStream;
 
+import org.apache.commons.lang3.ArrayUtils;
 import org.apache.commons.lang3.StringUtils;
 
 public class Main {
@@ -34,7 +38,7 @@ public class Main {
             if (request != null) {
               writeResponse(clientSocket, processRequest(request, directory));
             } else {
-              writeResponse(clientSocket, "HTTP/1.1 404 Not Found\r\n\r\n");
+              writeResponse(clientSocket, new ResponseOutput("HTTP/1.1 404 Not Found", null, null, null));
             }
           } catch (IOException e) {
             System.out.println("IOException: " + e.getMessage());
@@ -80,45 +84,54 @@ public class Main {
     return new RequestInput(method, url, headers, body.toString());
   }
 
-  private static String processRequest(RequestInput request, String directory) throws IOException {
-    var response = "";
+  private static ResponseOutput processRequest(RequestInput request, String directory) throws IOException {
+    ResponseOutput response = null;
 
     // Process simple request
     if (request.method().equals("GET") && (request.url().equals("/") || request.url().equals("/index.html")))
-      response = "HTTP/1.1 200 OK\r\n\r\n";
+      response = new ResponseOutput("HTTP/1.1 200 OK", null, null, null);
 
     // Read request paramater and write it back to the body
     if (request.method().equals("GET") && (request.url().startsWith("/echo/"))) {
       var str = request.url().split("/");
       if (str.length < 3) {
-        response = "HTTP/1.1 400 Bad Request\r\n\r\n";
+        response = new ResponseOutput("HTTP/1.1 400 Bad Request", null, null, null);
       } else {
-        response = "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: " + str[2].length() + "\r\n\r\n"
-            + str[2];
+        response = new ResponseOutput(
+            "HTTP/1.1 200 OK",
+            Map.of("Content-Type", "text/plain", "Content-Length", String.valueOf(str[2].length())),
+            str[2],
+            null);
       }
     }
 
     // Read header and write it back to the body
     if (request.method().equals("GET") && request.url().equals("/user-agent")) {
       var header = request.headers().get("User-Agent");
-      response = "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: " + header.length() + "\r\n\r\n"
-          + header;
+      response = new ResponseOutput(
+          "HTTP/1.1 200 OK",
+          Map.of("Content-Type", "text/plain", "Content-Length", String.valueOf(header.length())),
+          header,
+          null);
     }
 
     // Return a file
     if (request.method().equals("GET") && request.url().startsWith("/files")) {
       var url = request.url().split("/");
       if (url.length < 3) {
-        response = "HTTP/1.1 400 Bad Request\r\n\r\n";
+        response = new ResponseOutput("HTTP/1.1 400 Bad Request", null, null, null);
       } else {
         var fileName = url[2];
         var file = new File(directory + fileName);
         if (!file.exists()) {
-          response = "HTTP/1.1 404 Not Found\r\n\r\n";
+          response = new ResponseOutput("HTTP/1.1 404 Not Found", null, null, null);
         } else {
           var data = Files.readAllLines(file.toPath()).stream().collect(Collectors.joining("\n"));
-          response = "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: " + data.length()
-              + "\r\n\r\n" + data;
+          response = new ResponseOutput(
+              "HTTP/1.1 200 OK",
+              Map.of("Content-Type", "application/octet-stream", "Content-Length", String.valueOf(data.length())),
+              data,
+              null);
         }
       }
     }
@@ -127,36 +140,69 @@ public class Main {
     if (request.method().equals("POST") && request.url().startsWith("/files")) {
       var url = request.url().split("/");
       if (url.length < 3) {
-        response = "HTTP/1.1 400 Bad Request\r\n\r\n";
+        response = new ResponseOutput("HTTP/1.1 400 Bad Request", null, null, null);
       } else {
         var fileName = url[2];
         var file = new File(directory + fileName);
         if (!file.createNewFile()) {
-          response = "HTTP/1.1 409 Conflict\r\n\r\n";
+          response = new ResponseOutput("HTTP/1.1 409 Conflict", null, null, null);
         } else {
           var fileWriter = new FileWriter(file);
           fileWriter.write(request.body());
           fileWriter.close();
-          response = "HTTP/1.1 201 Created\r\n\r\n";
+          response = new ResponseOutput("HTTP/1.1 201 Created", null, null, null);
         }
       }
     }
 
     // Compression
-    if (
-      StringUtils.isNotEmpty(response) && 
-      request.headers().containsKey("Accept-Encoding") && 
-      request.headers().get("Accept-Encoding").contains("gzip")) {
-      var idx = response.indexOf("\r\n") + 2;
-      response = response.substring(0, idx).concat("Content-Encoding: gzip\r\n").concat(response.substring(idx));
+    if (response != null &&
+        request.headers().containsKey("Accept-Encoding") &&
+        request.headers().get("Accept-Encoding").contains("gzip")) {
+      var body = response.body();
+      var bos = new ByteArrayOutputStream(body.length());
+      var gzip = new GZIPOutputStream(bos);
+      gzip.write(body.getBytes());
+      gzip.close();
+      var compressedBody = bos.toByteArray();
+      bos.close();
+      var headers = new HashMap<>(response.headers());
+      headers.remove("Content-Length");
+      headers.put("Content-Length", String.valueOf(compressedBody.length));
+      headers.put("Content-Encoding", "gzip");
+      response = new ResponseOutput(
+          response.statusLine(),
+          headers,
+          body,
+          compressedBody);
     }
 
-    if (StringUtils.isEmpty(response))
-      response = "HTTP/1.1 404 Not Found\r\n\r\n";
+    if (response == null)
+      response = new ResponseOutput("HTTP/1.1 404 Not Found", null, null, null);
     return response;
   }
 
-  private static void writeResponse(Socket socket, String response) throws IOException {
-    socket.getOutputStream().write(response.getBytes());
+  private static void writeResponse(Socket socket, ResponseOutput response) throws IOException {
+    byte[] byteReponse = null;
+
+    // Build headers
+    var headers = "";
+    if (response.headers() != null) {
+      for (var e : response.headers().entrySet()) {
+        headers = headers.concat(e.getKey()).concat(": ").concat(e.getValue()).concat("\r\n");
+      }
+    }
+
+    // Build response string without body
+    var res = response.statusLine().concat("\r\n").concat(headers).concat("\r\n");
+
+    // Set body & build byte response
+    if (response.compressedBody() != null) {
+      byteReponse = ArrayUtils.addAll(res.getBytes(), response.compressedBody());
+    } else {
+      byteReponse = res.concat(StringUtils.stripToEmpty(response.body())).getBytes();
+    }
+
+    socket.getOutputStream().write(byteReponse);
   }
 }
