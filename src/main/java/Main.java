@@ -11,6 +11,9 @@ public class Main {
 
   public static void main(String[] args) {
 
+    final var directory = args.length >= 2 && args[0].equals("--directory") ? args[1] : "";
+    System.out.println(directory);
+
     System.out.println("Logs from your program will appear here!");
 
     try (ServerSocket serverSocket = new ServerSocket(4221)) {
@@ -26,7 +29,7 @@ public class Main {
           try {
             var request = parseRequest(clientSocket);
             if (request != null) {
-              writeResponse(clientSocket, processRequest(request));
+              writeResponse(clientSocket, processRequest(request, directory));
             } else {
               writeResponse(clientSocket, "HTTP/1.1 404 Not Found\r\n\r\n");
             }
@@ -65,7 +68,7 @@ public class Main {
     return new RequestInput(method, url, headers);
   }
 
-  private static String processRequest(RequestInput request) throws IOException {
+  private static String processRequest(RequestInput request, String directory) throws IOException {
     // Process simple request
     if (request.method().equals("GET") && (request.url().equals("/") || request.url().equals("/index.html")))
       return "HTTP/1.1 200 OK\r\n\r\n";
@@ -94,7 +97,7 @@ public class Main {
         return "HTTP/1.1 404 Not Found\r\n\r\n";
       var fileName = url[2];
 
-      var file = new File("/tmp/" + fileName);
+      var file = new File(directory + fileName);
       if (!file.exists()) return "HTTP/1.1 404 Not Found\r\n\r\n";
       var data = Files.readAllLines(file.toPath()).stream().collect(Collectors.joining("\n"));
       return "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: " + data.length() + "\r\n\r\n" + data;
