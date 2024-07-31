@@ -65,7 +65,8 @@ public class Main {
         return "HTTP/1.1 404 Not Found\r\n\r\n";
       }
     } else if (request.method().equals("GET") && request.url().equals("/user-agent")) {
-      return "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 12\r\n\r\n" + request.headers().get("User-Agent");
+      var header = request.headers().get("User-Agent");
+      return "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: " + header.length() + "\r\n\r\n" + header;
     }
      else {
       return "HTTP/1.1 404 Not Found\r\n\r\n";
