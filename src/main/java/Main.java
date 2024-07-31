@@ -1,4 +1,8 @@
-import java.io.*;
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.io.InputStreamReader;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.file.Files;
@@ -12,7 +16,6 @@ public class Main {
   public static void main(String[] args) {
 
     final var directory = args.length >= 2 && args[0].equals("--directory") ? args[1] : "";
-    System.out.println(directory);
 
     System.out.println("Logs from your program will appear here!");
 
@@ -65,7 +68,12 @@ public class Main {
       headerLine = input.readLine();
     }
 
-    return new RequestInput(method, url, headers);
+    var body = new StringBuilder();
+    while (input.ready()) {
+      body = body.append((char) input.read());
+    }
+
+    return new RequestInput(method, url, headers, body.toString());
   }
 
   private static String processRequest(RequestInput request, String directory) throws IOException {
@@ -101,6 +109,20 @@ public class Main {
       if (!file.exists()) return "HTTP/1.1 404 Not Found\r\n\r\n";
       var data = Files.readAllLines(file.toPath()).stream().collect(Collectors.joining("\n"));
       return "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: " + data.length() + "\r\n\r\n" + data;
+    }
+
+    // Create file
+    if (request.method().equals("POST") && request.url().startsWith("/files")) {
+      var url = request.url().split("/");
+      if (url.length < 3)
+        return "HTTP/1.1 404 Not Found\r\n\r\n";
+      var fileName = url[2];
+      var file = new File(directory + fileName);
+      if (!file.createNewFile()) return "HTTP/1.1 409 File already exists\r\n\r\n";
+      var fileWriter = new FileWriter(file);
+      fileWriter.write(request.body());
+      fileWriter.close();
+      return "HTTP/1.1 201 Created\r\n\r\n";
     }
 
     return "HTTP/1.1 404 Not Found\r\n\r\n";
