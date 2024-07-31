@@ -1,7 +1,9 @@
 import java.io.*;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.nio.file.Files;
 import java.util.HashMap;
+import java.util.stream.Collectors;
 
 import org.apache.commons.lang3.StringUtils;
 
@@ -64,9 +66,12 @@ public class Main {
   }
 
   private static String processRequest(RequestInput request) throws IOException {
-    if (request.method().equals("GET") && (request.url().equals("/") || request.url().equals("/index.html"))) {
+    // Process simple request
+    if (request.method().equals("GET") && (request.url().equals("/") || request.url().equals("/index.html")))
       return "HTTP/1.1 200 OK\r\n\r\n";
-    } else if (request.method().equals("GET") && (request.url().startsWith("/echo/"))) {
+
+    // Read request paramater and write it back to the body
+    if (request.method().equals("GET") && (request.url().startsWith("/echo/"))) {
       var str = request.url().split("/");
       if (str.length >= 3) {
         return "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: " + str[2].length() + "\r\n\r\n"
@@ -74,12 +79,28 @@ public class Main {
       } else {
         return "HTTP/1.1 404 Not Found\r\n\r\n";
       }
-    } else if (request.method().equals("GET") && request.url().equals("/user-agent")) {
+    }
+
+    // Read header and write it back to the body
+    if (request.method().equals("GET") && request.url().equals("/user-agent")) {
       var header = request.headers().get("User-Agent");
       return "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: " + header.length() + "\r\n\r\n" + header;
-    } else {
-      return "HTTP/1.1 404 Not Found\r\n\r\n";
     }
+
+    // Return a file
+    if (request.method().equals("GET") && request.url().startsWith("/files")) {
+      var url = request.url().split("/");
+      if (url.length < 3)
+        return "HTTP/1.1 404 Not Found\r\n\r\n";
+      var fileName = url[2];
+
+      var file = new File("/tmp/" + fileName);
+      if (!file.exists()) return "HTTP/1.1 404 Not Found\r\n\r\n";
+      var data = Files.readAllLines(file.toPath()).stream().collect(Collectors.joining("\n"));
+      return "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: " + data.length() + "\r\n\r\n" + data;
+    }
+
+    return "HTTP/1.1 404 Not Found\r\n\r\n";
   }
 
   private static void writeResponse(Socket socket, String response) throws IOException {
