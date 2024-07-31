@@ -65,8 +65,9 @@ public class Main {
     String headerLine = input.readLine();
     var headers = new HashMap<String, String>();
     while (StringUtils.isNotBlank(headerLine)) {
-      var headerLineArr = headerLine.split(" ");
-      headers.put(headerLineArr[0].substring(0, headerLineArr[0].length() - 1), headerLineArr[1]);
+      var key = headerLine.substring(0, headerLine.indexOf(":"));
+      var value = headerLine.substring(headerLine.indexOf(":") + 1);
+      headers.put(key.trim(), value.trim());
       headerLine = input.readLine();
     }
 
@@ -142,7 +143,10 @@ public class Main {
     }
 
     // Compression
-    if (request.headers().containsKey("Accept-Encoding") && request.headers().get("Accept-Encoding").equals("gzip")) {
+    if (
+      StringUtils.isNotEmpty(response) && 
+      request.headers().containsKey("Accept-Encoding") && 
+      request.headers().get("Accept-Encoding").contains("gzip")) {
       var idx = response.indexOf("\r\n") + 2;
       response = response.substring(0, idx).concat("Content-Encoding: gzip\r\n").concat(response.substring(idx));
     }
