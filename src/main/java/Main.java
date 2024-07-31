@@ -12,7 +12,6 @@ import java.util.Map;
 import java.util.stream.Collectors;
 import java.util.zip.GZIPOutputStream;
 
-import org.apache.commons.lang3.ArrayUtils;
 import org.apache.commons.lang3.StringUtils;
 
 public class Main {
@@ -183,8 +182,6 @@ public class Main {
   }
 
   private static void writeResponse(Socket socket, ResponseOutput response) throws IOException {
-    byte[] byteReponse = null;
-
     // Build headers
     var headers = "";
     if (response.headers() != null) {
@@ -193,16 +190,15 @@ public class Main {
       }
     }
 
-    // Build response string without body
+    // Write response without body
     var res = response.statusLine().concat("\r\n").concat(headers).concat("\r\n");
+    socket.getOutputStream().write(res.getBytes());
 
-    // Set body & build byte response
+    // Write body
     if (response.compressedBody() != null) {
-      byteReponse = ArrayUtils.addAll(res.getBytes(), response.compressedBody());
+      socket.getOutputStream().write(response.compressedBody());
     } else {
-      byteReponse = res.concat(StringUtils.stripToEmpty(response.body())).getBytes();
+      socket.getOutputStream().write(response.body().getBytes());
     }
-
-    socket.getOutputStream().write(byteReponse);
   }
 }
